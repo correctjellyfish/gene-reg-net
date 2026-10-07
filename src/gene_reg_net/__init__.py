@@ -5,8 +5,8 @@ A Library for working with gene regulatory networks
 from importlib.metadata import version
 
 __author__ = "Braden Griebel"
-__version__ = version("metworkpy")
+__version__ = version("gene_reg_net")
 
 __all__ = ["GRN"]
 
-from .network_class import GRN
+from .core.network_class import GRN
