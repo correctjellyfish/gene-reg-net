@@ -60,16 +60,18 @@ class GRN:
         source: str | None = None,
         target: str | None = None,
         weight: str | None = None,
+        weight_type: type = np.int8,
     ):
         self.source = source
         self.target = target
         self.weight = weight
+        self._weight_type = weight_type
         # Create the _array and _index representing the network
         match network:
             case pd.DataFrame():
                 self._index, array = self._df_init(network)
             case nx.DiGraph():
-                self._index, array = self._graph_init(network)  # ty: ignore[invalid-argument-type]
+                self._index, array = self._graph_init(network)
             case sparse.sparray():
                 self._index, array = self._sparray_init(network)
             case np.ndarray():
@@ -93,7 +95,7 @@ class GRN:
         # Create caches for various return types
         self._digraph: nx.DiGraph | None = None
         self._dataframe: pd.DataFrame | None = None
-        self._nparray: np.ndarray[tuple[int, int], np.dtype[np.int16]] | None = None
+        self._nparray: np.ndarray[tuple[int, int], np.dtype[np.integer]] | None = None
 
     def _reset_cache(self):
         self._digraph = None
@@ -109,16 +111,16 @@ class GRN:
         idx = pd.Index(
             set(network[self._source].unique()) | set(network[self._target].unique())
         )
-        array = sparse.dok_array((len(idx), len(idx)), dtype=np.int16)
+        array = sparse.dok_array((len(idx), len(idx)), dtype=self._weight_type)
         for _, (s, t, w) in network[[self.source, self.target, self.weight]].iterrows():
-            array[idx.get_loc(t), idx.get_loc(s)] = np.int16(w)
+            array[idx.get_loc(s), idx.get_loc(t)] = self._weight_type(w)
         return idx, array
 
     def _graph_init(self, network: nx.DiGraph) -> tuple[pd.Index, sparse.dok_array]:
         idx = pd.Index(network.nodes)
-        array = sparse.dok_array((len(idx), len(idx)), dtype=np.int16)
+        array = sparse.dok_array((len(idx), len(idx)), dtype=self._weight_type)
         for u, v, d in network.edges(data=True):
-            array[idx.get_loc(v), idx.get_loc(u)] = np.int16(d[self.weight])
+            array[idx.get_loc(u), idx.get_loc(v)] = self._weight_type(d[self.weight])
         return idx, array
 
     def _sparray_init(
@@ -137,7 +139,7 @@ class GRN:
         if network.shape[0] != network.shape[1]:
             raise ValueError("Network must be a square matrix")
         idx = pd.RangeIndex(network.shape[0])
-        array = sparse.dok_array(network, dtype=np.int16)
+        array = sparse.dok_array(network, dtype=self._weight_type)
         return idx, array
 
     @property
@@ -213,7 +215,7 @@ class GRN:
         idx = self.index
         g = nx.DiGraph()
         g.add_edges_from(
-            (idx[j], idx[i], {"weight": v}) for i, j, v in zip(row_idx, col_idx, vals)
+            (idx[i], idx[j], {"weight": v}) for i, j, v in zip(row_idx, col_idx, vals)
         )
         return g
 
@@ -222,10 +224,10 @@ class GRN:
         """
         The gene regulatory network in the form of a sparse array.
         Each i,j entry represents a regulatory relationship, with
-        gene j regulating gene i. An entry of -1 represents
-        gene j repressing gene i, 1 represents gene j activating
-        gene i, and 0 indicates no regulatory relationship
-        from gene j to gene i.
+        gene i regulating gene j. An entry of -1 represents
+        gene i repressing gene j, 1 represents gene i activating
+        gene j, and 0 indicates no regulatory relationship
+        from gene i to gene j.
         """
         return self._array
 
@@ -240,10 +242,10 @@ class GRN:
         """
         The gene regulatory network in the form of a numpy array.
         Each i,j entry represents a regulatory relationship, with
-        gene j regulating gene i. An entry of -1 represents
-        gene j repressing gene i, 1 represents gene j activating
-        gene i, and 0 indicates no regulatory relationship
-        from gene j to gene i.
+        gene i regulating gene j. An entry of -1 represents
+        gene i repressing gene j, 1 represents gene i activating
+        gene j, and 0 indicates no regulatory relationship
+        from gene i to gene j.
         """
         if self._nparray is not None:
             return self._nparray
@@ -251,7 +253,7 @@ class GRN:
         return self._nparray
 
     @array.setter
-    def array(self, network: np.ndarray[tuple[int, int], np.dtype[np.int16]]):
+    def array(self, network: np.ndarray[tuple[int, int], np.dtype[np.integer]]):
         self._reset_cache()
         self._idx, array = self._nparray_init(network=network)
         self._array: sparse.csr_array = array.tocsr()
@@ -259,17 +261,32 @@ class GRN:
     @property
     def df(self):
         """
-        The gene regulatory network in the form of a pandas DataFrame.
-        Row and column indexes are the gene labels.
-        Each i,j entry represents a regulatory relationship, with
-        gene j regulating gene i. An entry of -1 represents
-        gene j repressing gene i, 1 represents gene j activating
-        gene i, and 0 indicates no regulatory relationship
-        from gene j to gene i.
+        The gene regulatory network in the form of a long-form pandas DataFrame.
+        A dataframe with 3 columns, 'source', 'target', and 'weight'.
+        Each row represents a regulatory relationship from 'source', to 'target'.
+        The 'weight' column contains -1, 0, and 1. A value of -1 represents
+        repression, a value of 0 represents no interaction, a value of 1 represents
+        activation. Default column names can be overridden with the `source`, `target`,
+        and `weight` parameters.
         """
         if self._dataframe is not None:
             return self._dataframe
-        self._dataframe = pd.DataFrame(self._array.todense(), index=self.index)
+        coo = self._array.tocoo()
+        row_idx, col_idx = coo.coords
+        vals = coo.data
+        long_df = pd.DataFrame(
+            {
+                self._source: pd.Series(
+                    (self.index[s] for s in row_idx), dtype=self.index.dtype
+                ),
+                self._target: pd.Series(
+                    (self.index[t] for t in col_idx), dtype=self.index.dtype
+                ),
+                self._weight: pd.Series(vals, dtype=self._weight_type),
+            },
+            index=pd.RangeIndex(self._array.nnz),
+        )
+        self._dataframe = long_df
         return self._dataframe
 
     @df.setter
@@ -310,3 +327,16 @@ class GRN:
                 f" genes and there are {len(idx)} labels in the provided index"
             )
         self._index = idx
+
+    @property
+    def weight_type(self):
+        """
+        The type used to store the weights (i.e. np.int8)
+        """
+        return self._weight_type
+
+    @weight_type.setter
+    def weight_type(self, weight_type: type = np.int16):
+        self._weight_type = weight_type
+        self._array = self._array.astype(self._weight_type)
+        self._reset_cache()
