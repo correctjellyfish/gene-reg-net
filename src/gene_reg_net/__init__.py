@@ -1,6 +1,7 @@
 """
 A Library for working with gene regulatory networks
 """
+
 from importlib.metadata import version
 
 __author__ = "Braden Griebel"

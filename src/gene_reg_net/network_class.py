@@ -2,14 +2,13 @@
 Base classes for Gene Regulatory Networks
 """
 
-import warnings
 from collections.abc import Iterable
-from typing import Literal
 
 import networkx as nx
 import numpy as np
 import pandas as pd
 from scipy import sparse
+
 
 class GRN:
     """
@@ -94,9 +93,7 @@ class GRN:
         # Create caches for various return types
         self._digraph: nx.DiGraph | None = None
         self._dataframe: pd.DataFrame | None = None
-        self._nparray: (
-            np.ndarray[tuple[int, int], np.dtype[np.int16]] | None
-        ) = None
+        self._nparray: np.ndarray[tuple[int, int], np.dtype[np.int16]] | None = None
 
     def _reset_cache(self):
         self._digraph = None
@@ -110,19 +107,14 @@ class GRN:
     ) -> tuple[pd.Index, sparse.dok_array]:
         # Get the genes in the regulatory network
         idx = pd.Index(
-            set(network[self._source].unique())
-            | set(network[self._target].unique())
+            set(network[self._source].unique()) | set(network[self._target].unique())
         )
         array = sparse.dok_array((len(idx), len(idx)), dtype=np.int16)
-        for _, (s, t, w) in network[
-            [self.source, self.target, self.weight]
-        ].iterrows():
+        for _, (s, t, w) in network[[self.source, self.target, self.weight]].iterrows():
             array[idx.get_loc(t), idx.get_loc(s)] = np.int16(w)
         return idx, array
 
-    def _graph_init(
-        self, network: nx.DiGraph
-    ) -> tuple[pd.Index, sparse.dok_array]:
+    def _graph_init(self, network: nx.DiGraph) -> tuple[pd.Index, sparse.dok_array]:
         idx = pd.Index(network.nodes)
         array = sparse.dok_array((len(idx), len(idx)), dtype=np.int16)
         for u, v, d in network.edges(data=True):
@@ -141,9 +133,7 @@ class GRN:
         array = network.todok()  # ty: ignore[unresolved-attribute]
         return idx, array
 
-    def _nparray_init(
-        self, network: np.ndarray
-    ) -> tuple[pd.Index, sparse.dok_array]:
+    def _nparray_init(self, network: np.ndarray) -> tuple[pd.Index, sparse.dok_array]:
         if network.shape[0] != network.shape[1]:
             raise ValueError("Network must be a square matrix")
         idx = pd.RangeIndex(network.shape[0])
@@ -223,8 +213,7 @@ class GRN:
         idx = self.index
         g = nx.DiGraph()
         g.add_edges_from(
-            (idx[j], idx[i], {"weight": v})
-            for i, j, v in zip(row_idx, col_idx, vals)
+            (idx[j], idx[i], {"weight": v}) for i, j, v in zip(row_idx, col_idx, vals)
         )
         return g
 
@@ -321,4 +310,3 @@ class GRN:
                 f" genes and there are {len(idx)} labels in the provided index"
             )
         self._index = idx
-

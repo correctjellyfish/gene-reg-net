@@ -1,4 +1,7 @@
 [tools]
+harper-ls = "latest"
+markdownlint-cli2 = "latest"
+marksman = "latest"
 uv = "latest"
 
 [settings]
